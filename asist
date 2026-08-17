@@ -1,0 +1,347 @@
+--// HEAD LOCK AIM SYSTEM
+--// For your own Roblox experience
+--// Place this LocalScript in:
+--// StarterPlayer > StarterPlayerScripts
+
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+
+local LocalPlayer = Players.LocalPlayer
+
+--==================================================
+-- SETTINGS
+--==================================================
+
+local FOV_RADIUS = 180
+local MAX_DISTANCE = 500
+local SMOOTHNESS = 0.18
+
+local BUTTON_SIZE = UDim2.new(0, 130, 0, 45)
+local BUTTON_POSITION = UDim2.new(0.5, -65, 0.8, 0)
+
+--==================================================
+-- VARIABLES
+--==================================================
+
+local aimEnabled = false
+local targetHead = nil
+
+--==================================================
+-- GUI
+--==================================================
+
+local gui = Instance.new("ScreenGui")
+gui.Name = "HeadLockGui"
+gui.ResetOnSpawn = false
+gui.IgnoreGuiInset = true
+gui.Parent = LocalPlayer:WaitForChild("PlayerGui")
+
+local button = Instance.new("TextButton")
+button.Name = "AimToggle"
+button.Size = BUTTON_SIZE
+button.Position = BUTTON_POSITION
+button.BackgroundColor3 = Color3.fromRGB(180, 45, 45)
+button.BorderSizePixel = 0
+button.TextColor3 = Color3.fromRGB(255, 255, 255)
+button.Text = "AIM: OFF"
+button.TextSize = 18
+button.Font = Enum.Font.GothamBold
+button.AutoButtonColor = true
+button.Parent = gui
+
+local corner = Instance.new("UICorner")
+corner.CornerRadius = UDim.new(0, 8)
+corner.Parent = button
+
+--==================================================
+-- FOV CIRCLE
+--==================================================
+
+local fovCircle = Instance.new("Frame")
+fovCircle.Name = "FOVCircle"
+fovCircle.AnchorPoint = Vector2.new(0.5, 0.5)
+fovCircle.Size = UDim2.fromOffset(FOV_RADIUS * 2, FOV_RADIUS * 2)
+fovCircle.Position = UDim2.fromScale(0.5, 0.5)
+fovCircle.BackgroundTransparency = 1
+fovCircle.Visible = true
+fovCircle.Parent = gui
+
+local circleCorner = Instance.new("UICorner")
+circleCorner.CornerRadius = UDim.new(1, 0)
+circleCorner.Parent = fovCircle
+
+local circleStroke = Instance.new("UIStroke")
+circleStroke.Thickness = 1.5
+circleStroke.Color = Color3.fromRGB(255, 255, 255)
+circleStroke.Transparency = 0.25
+circleStroke.Parent = fovCircle
+
+--==================================================
+-- BUTTON TOGGLE
+--==================================================
+
+button.Activated:Connect(function()
+	aimEnabled = not aimEnabled
+	targetHead = nil
+
+	if aimEnabled then
+		button.Text = "AIM: ON"
+		button.BackgroundColor3 = Color3.fromRGB(40, 180, 70)
+		circleStroke.Color = Color3.fromRGB(50, 255, 80)
+	else
+		button.Text = "AIM: OFF"
+		button.BackgroundColor3 = Color3.fromRGB(180, 45, 45)
+		circleStroke.Color = Color3.fromRGB(255, 255, 255)
+	end
+end)
+
+--==================================================
+-- GET HEAD
+--==================================================
+
+local function getHead(player)
+	if player == LocalPlayer then
+		return nil
+	end
+
+	local character = player.Character
+
+	if not character then
+		return nil
+	end
+
+	local humanoid = character:FindFirstChildOfClass("Humanoid")
+	local head = character:FindFirstChild("Head")
+
+	if not humanoid or humanoid.Health <= 0 then
+		return nil
+	end
+
+	if not head or not head:IsA("BasePart") then
+		return nil
+	end
+
+	return head
+end
+
+--==================================================
+-- VISIBILITY CHECK
+--==================================================
+
+local function isVisible(head, camera)
+	if not head or not camera then
+		return false
+	end
+
+	local character = head.Parent
+
+	if not character then
+		return false
+	end
+
+	local origin = camera.CFrame.Position
+	local direction = head.Position - origin
+
+	local params = RaycastParams.new()
+	params.FilterType = Enum.RaycastFilterType.Exclude
+
+	local ignoreList = {}
+
+	if LocalPlayer.Character then
+		table.insert(ignoreList, LocalPlayer.Character)
+	end
+
+	params.FilterDescendantsInstances = ignoreList
+
+	local result = workspace:Raycast(
+		origin,
+		direction,
+		params
+	)
+
+	-- Nothing blocked the ray.
+	if not result then
+		return true
+	end
+
+	-- The ray hit the target character.
+	return result.Instance:IsDescendantOf(character)
+end
+
+--==================================================
+-- FIND BEST TARGET
+--==================================================
+
+local function findTarget(camera)
+	if not camera then
+		return nil
+	end
+
+	local bestHead = nil
+	local bestScreenDistance = math.huge
+
+	local viewport = camera.ViewportSize
+
+	local screenCenter = Vector2.new(
+		viewport.X / 2,
+		viewport.Y / 2
+	)
+
+	for _, player in ipairs(Players:GetPlayers()) do
+		local head = getHead(player)
+
+		if head then
+			local distance3D =
+				(head.Position - camera.CFrame.Position).Magnitude
+
+			if distance3D <= MAX_DISTANCE then
+				local screenPosition, onScreen =
+					camera:WorldToViewportPoint(head.Position)
+
+				if onScreen and screenPosition.Z > 0 then
+					local screenPoint = Vector2.new(
+						screenPosition.X,
+						screenPosition.Y
+					)
+
+					local screenDistance =
+						(screenPoint - screenCenter).Magnitude
+
+					if screenDistance <= FOV_RADIUS
+						and screenDistance < bestScreenDistance then
+
+						if isVisible(head, camera) then
+							bestScreenDistance = screenDistance
+							bestHead = head
+						end
+					end
+				end
+			end
+		end
+	end
+
+	return bestHead
+end
+
+--==================================================
+-- TARGET VALIDATION
+--==================================================
+
+local function targetStillValid(head, camera)
+	if not head or not camera then
+		return false
+	end
+
+	if not head:IsDescendantOf(workspace) then
+		return false
+	end
+
+	local character = head.Parent
+
+	if not character then
+		return false
+	end
+
+	local player = Players:GetPlayerFromCharacter(character)
+
+	if not player or player == LocalPlayer then
+		return false
+	end
+
+	local humanoid =
+		character:FindFirstChildOfClass("Humanoid")
+
+	if not humanoid or humanoid.Health <= 0 then
+		return false
+	end
+
+	local distance =
+		(head.Position - camera.CFrame.Position).Magnitude
+
+	if distance > MAX_DISTANCE then
+		return false
+	end
+
+	local screenPosition, onScreen =
+		camera:WorldToViewportPoint(head.Position)
+
+	if not onScreen or screenPosition.Z <= 0 then
+		return false
+	end
+
+	local center = camera.ViewportSize / 2
+
+	local screenDistance =
+		(
+			Vector2.new(
+				screenPosition.X,
+				screenPosition.Y
+			) - center
+		).Magnitude
+
+	if screenDistance > FOV_RADIUS then
+		return false
+	end
+
+	return isVisible(head, camera)
+end
+
+--==================================================
+-- AIM LOOP
+--==================================================
+
+RunService:BindToRenderStep(
+	"HeadLockSystem",
+	Enum.RenderPriority.Camera.Value + 1,
+	function()
+		local camera = workspace.CurrentCamera
+
+		if not camera then
+			return
+		end
+
+		-- Keep FOV circle centered.
+		fovCircle.Position = UDim2.fromScale(0.5, 0.5)
+
+		if not aimEnabled then
+			targetHead = nil
+			return
+		end
+
+		-- Find a new target if the current one is invalid.
+		if not targetStillValid(targetHead, camera) then
+			targetHead = findTarget(camera)
+		end
+
+		if not targetHead then
+			return
+		end
+
+		local cameraPosition = camera.CFrame.Position
+		local targetPosition = targetHead.Position
+
+		local desiredCFrame = CFrame.lookAt(
+			cameraPosition,
+			targetPosition
+		)
+
+		camera.CFrame = camera.CFrame:Lerp(
+			desiredCFrame,
+			SMOOTHNESS
+		)
+	end
+)
+
+--==================================================
+-- CLEANUP WHEN PLAYER LEAVES
+--==================================================
+
+Players.PlayerRemoving:Connect(function(player)
+	if targetHead then
+		local character = targetHead.Parent
+
+		if character == player.Character then
+			targetHead = nil
+		end
+	end
+end)
