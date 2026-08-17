@@ -4,17 +4,16 @@ local Players = game:GetService("Players")
 local player = Players.LocalPlayer
 local camera = workspace.CurrentCamera
 
-local targetHead = nil
 local smoothness = 0.15
 local enabled = false
+local targetHead = nil
 
--- Create GUI
+-- GUI
 local screenGui = Instance.new("ScreenGui")
 screenGui.Name = "AimLockGUI"
 screenGui.ResetOnSpawn = false
 screenGui.Parent = player:WaitForChild("PlayerGui")
 
--- Create button
 local button = Instance.new("TextButton")
 button.Size = UDim2.new(0, 140, 0, 45)
 button.Position = UDim2.new(0, 20, 0.5, -22)
@@ -25,36 +24,81 @@ button.Font = Enum.Font.GothamBold
 button.Text = "AIM: OFF"
 button.Parent = screenGui
 
--- Rounded corners
 local corner = Instance.new("UICorner")
 corner.CornerRadius = UDim.new(0, 10)
 corner.Parent = button
 
+-- Find nearest player to the center of the screen
+local function getTarget()
+	local closestHead = nil
+	local closestDistance = math.huge
+
+	local screenCenter = Vector2.new(
+		camera.ViewportSize.X / 2,
+		camera.ViewportSize.Y / 2
+	)
+
+	for _, otherPlayer in ipairs(Players:GetPlayers()) do
+		if otherPlayer ~= player then
+			local character = otherPlayer.Character
+			local head = character and character:FindFirstChild("Head")
+			local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+
+			if head and humanoid and humanoid.Health > 0 then
+				local screenPosition, onScreen =
+					camera:WorldToViewportPoint(head.Position)
+
+				if onScreen then
+					local distance = (
+						Vector2.new(screenPosition.X, screenPosition.Y)
+						- screenCenter
+					).Magnitude
+
+					if distance < closestDistance then
+						closestDistance = distance
+						closestHead = head
+					end
+				end
+			end
+		end
+	end
+
+	return closestHead
+end
+
 -- Toggle
 button.MouseButton1Click:Connect(function()
-    enabled = not enabled
+	enabled = not enabled
 
-    if enabled then
-        button.Text = "AIM: ON"
-        button.BackgroundColor3 = Color3.fromRGB(50, 180, 80)
-    else
-        button.Text = "AIM: OFF"
-        button.BackgroundColor3 = Color3.fromRGB(180, 50, 50)
-    end
+	if enabled then
+		button.Text = "AIM: ON"
+		button.BackgroundColor3 = Color3.fromRGB(50, 180, 80)
+	else
+		button.Text = "AIM: OFF"
+		button.BackgroundColor3 = Color3.fromRGB(180, 50, 50)
+		targetHead = nil
+	end
 end)
 
--- Camera aiming
+-- Aim
 RunService.RenderStepped:Connect(function()
-    if enabled and targetHead and targetHead.Parent then
-        local cameraPosition = camera.CFrame.Position
-        local targetCFrame = CFrame.lookAt(
-            cameraPosition,
-            targetHead.Position
-        )
+	if not enabled then
+		return
+	end
 
-        camera.CFrame = camera.CFrame:Lerp(
-            targetCFrame,
-            smoothness
-        )
-    end
+	targetHead = getTarget()
+
+	if targetHead and targetHead.Parent then
+		local cameraPosition = camera.CFrame.Position
+
+		local targetCFrame = CFrame.lookAt(
+			cameraPosition,
+			targetHead.Position
+		)
+
+		camera.CFrame = camera.CFrame:Lerp(
+			targetCFrame,
+			smoothness
+		)
+	end
 end)
