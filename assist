@@ -1,0 +1,60 @@
+local RunService = game:GetService("RunService")
+local Players = game:GetService("Players")
+
+local player = Players.LocalPlayer
+local camera = workspace.CurrentCamera
+
+local targetHead = nil
+local smoothness = 0.15
+local enabled = false
+
+-- Create GUI
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "AimLockGUI"
+screenGui.ResetOnSpawn = false
+screenGui.Parent = player:WaitForChild("PlayerGui")
+
+-- Create button
+local button = Instance.new("TextButton")
+button.Size = UDim2.new(0, 140, 0, 45)
+button.Position = UDim2.new(0, 20, 0.5, -22)
+button.BackgroundColor3 = Color3.fromRGB(180, 50, 50)
+button.TextColor3 = Color3.fromRGB(255, 255, 255)
+button.TextSize = 20
+button.Font = Enum.Font.GothamBold
+button.Text = "AIM: OFF"
+button.Parent = screenGui
+
+-- Rounded corners
+local corner = Instance.new("UICorner")
+corner.CornerRadius = UDim.new(0, 10)
+corner.Parent = button
+
+-- Toggle
+button.MouseButton1Click:Connect(function()
+    enabled = not enabled
+
+    if enabled then
+        button.Text = "AIM: ON"
+        button.BackgroundColor3 = Color3.fromRGB(50, 180, 80)
+    else
+        button.Text = "AIM: OFF"
+        button.BackgroundColor3 = Color3.fromRGB(180, 50, 50)
+    end
+end)
+
+-- Camera aiming
+RunService.RenderStepped:Connect(function()
+    if enabled and targetHead and targetHead.Parent then
+        local cameraPosition = camera.CFrame.Position
+        local targetCFrame = CFrame.lookAt(
+            cameraPosition,
+            targetHead.Position
+        )
+
+        camera.CFrame = camera.CFrame:Lerp(
+            targetCFrame,
+            smoothness
+        )
+    end
+end)
