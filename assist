@@ -3,10 +3,12 @@ local Players = game:GetService("Players")
 
 local player = Players.LocalPlayer
 local camera = workspace.CurrentCamera
+local mouse = player:GetMouse()
 
-local smoothness = 0.15
+local smoothness = 0.8 -- 1 = instant, 0.5 = smoother
 local enabled = false
 local targetHead = nil
+local maxDistance = 150 -- pixels from mouse
 
 -- GUI
 local screenGui = Instance.new("ScreenGui")
@@ -28,15 +30,9 @@ local corner = Instance.new("UICorner")
 corner.CornerRadius = UDim.new(0, 10)
 corner.Parent = button
 
--- Find nearest player to the center of the screen
 local function getTarget()
 	local closestHead = nil
-	local closestDistance = math.huge
-
-	local screenCenter = Vector2.new(
-		camera.ViewportSize.X / 2,
-		camera.ViewportSize.Y / 2
-	)
+	local closestDistance = maxDistance
 
 	for _, otherPlayer in ipairs(Players:GetPlayers()) do
 		if otherPlayer ~= player then
@@ -49,9 +45,11 @@ local function getTarget()
 					camera:WorldToViewportPoint(head.Position)
 
 				if onScreen then
+					local mousePosition = Vector2.new(mouse.X, mouse.Y)
+
 					local distance = (
 						Vector2.new(screenPosition.X, screenPosition.Y)
-						- screenCenter
+						- mousePosition
 					).Magnitude
 
 					if distance < closestDistance then
@@ -66,7 +64,6 @@ local function getTarget()
 	return closestHead
 end
 
--- Toggle
 button.MouseButton1Click:Connect(function()
 	enabled = not enabled
 
@@ -80,12 +77,12 @@ button.MouseButton1Click:Connect(function()
 	end
 end)
 
--- Aim
 RunService.RenderStepped:Connect(function()
 	if not enabled then
 		return
 	end
 
+	-- Find whoever is closest to the mouse
 	targetHead = getTarget()
 
 	if targetHead and targetHead.Parent then
