@@ -1,22 +1,35 @@
-local RunService = game:GetService("RunService")
 local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
 
 local player = Players.LocalPlayer
+
+if not player then
+	warn("This must be running from a LocalScript.")
+	return
+end
+
 local camera = workspace.CurrentCamera
+while not camera do
+	workspace:GetPropertyChangedSignal("CurrentCamera"):Wait()
+	camera = workspace.CurrentCamera
+end
+
 local mouse = player:GetMouse()
 
 local enabled = false
 local targetHead = nil
 
--- Lower = slower/smoother
 local AIM_SPEED = 0.06
-
--- Higher = less frequent target scanning
 local TARGET_REFRESH = 0.15
 
 local function findTarget()
 	local bestHead = nil
 	local bestDistance = math.huge
+
+	camera = workspace.CurrentCamera
+	if not camera then
+		return nil
+	end
 
 	for _, otherPlayer in ipairs(Players:GetPlayers()) do
 		if otherPlayer ~= player then
@@ -45,17 +58,14 @@ local function findTarget()
 	return bestHead
 end
 
--- Find a target periodically instead of every frame
 task.spawn(function()
 	while true do
 		if enabled then
-			if not targetHead
-				or not targetHead.Parent then
-
+			if not targetHead or not targetHead.Parent then
 				targetHead = findTarget()
 			else
-				local humanoid =
-					targetHead.Parent:FindFirstChildOfClass("Humanoid")
+				local character = targetHead.Parent
+				local humanoid = character:FindFirstChildOfClass("Humanoid")
 
 				if not humanoid or humanoid.Health <= 0 then
 					targetHead = findTarget()
@@ -69,12 +79,16 @@ task.spawn(function()
 	end
 end)
 
--- Smoothly rotate the camera every frame
 RunService:BindToRenderStep(
 	"AimLockCamera",
 	Enum.RenderPriority.Camera.Value + 1,
 	function()
 		if not enabled or not targetHead or not targetHead.Parent then
+			return
+		end
+
+		camera = workspace.CurrentCamera
+		if not camera then
 			return
 		end
 
@@ -93,7 +107,6 @@ RunService:BindToRenderStep(
 			targetHead.Position
 		)
 
-		-- Smooth camera movement
 		camera.CFrame = camera.CFrame:Lerp(
 			targetCFrame,
 			AIM_SPEED
