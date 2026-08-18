@@ -1,75 +1,27 @@
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local LocalPlayer = Players.LocalPlayer
 local Camera = workspace.CurrentCamera
 
---==================================================
--- SETTINGS
---==================================================
-
+--// SETTINGS
 local AIM_KEY = Enum.KeyCode.Q
-
 local FOV_RADIUS = 180
 local MAX_DISTANCE = 500
-local SMOOTHNESS = 0.40
-
+local SMOOTHNESS = 0.22
 local REQUIRE_LINE_OF_SIGHT = true
-
--- Auto-fire settings
-local AUTO_FIRE = true
-local FIRE_COOLDOWN = 0.12
-
--- Your game's weapon RemoteEvent
-local FireWeapon = ReplicatedStorage:WaitForChild("FireWeapon")
-
---==================================================
--- VARIABLES
---==================================================
 
 local aiming = false
 local targetHead = nil
-local lastShot = 0
 
---==================================================
--- GUI
---==================================================
-
-local screenGui = Instance.new("ScreenGui")
-screenGui.Name = "AimAssistGUI"
-screenGui.ResetOnSpawn = false
-screenGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
-
-local button = Instance.new("TextButton")
-button.Name = "AimToggle"
-button.Size = UDim2.fromOffset(130, 45)
-button.Position = UDim2.new(1, -150, 1, -75)
-
-button.BackgroundColor3 = Color3.fromRGB(170, 50, 50)
-
-button.TextColor3 = Color3.fromRGB(255, 255, 255)
-button.Text = "AIM: OFF"
-button.TextScaled = true
-button.Font = Enum.Font.GothamBold
-
-button.Parent = screenGui
-
-local corner = Instance.new("UICorner")
-corner.CornerRadius = UDim.new(0, 8)
-corner.Parent = button
-
---==================================================
--- ENEMY CHECK
---==================================================
-
+--// Check whether a player is an enemy
 local function isEnemy(player)
-
 	if player == LocalPlayer then
 		return false
 	end
 
+	-- Works with normal Roblox Teams
 	if LocalPlayer.Team ~= nil and player.Team ~= nil then
 		return LocalPlayer.Team ~= player.Team
 	end
@@ -77,18 +29,13 @@ local function isEnemy(player)
 	return true
 end
 
---==================================================
--- LINE OF SIGHT
---==================================================
-
+--// Check if the head can actually be seen
 local function canSee(head)
-
 	if not REQUIRE_LINE_OF_SIGHT then
 		return true
 	end
 
 	local character = LocalPlayer.Character
-
 	if not character then
 		return false
 	end
@@ -97,17 +44,10 @@ local function canSee(head)
 	local direction = head.Position - origin
 
 	local params = RaycastParams.new()
-
 	params.FilterType = Enum.RaycastFilterType.Exclude
-	params.FilterDescendantsInstances = {
-		character
-	}
+	params.FilterDescendantsInstances = {character}
 
-	local result = workspace:Raycast(
-		origin,
-		direction,
-		params
-	)
+	local result = workspace:Raycast(origin, direction, params)
 
 	if not result then
 		return true
@@ -116,269 +56,106 @@ local function canSee(head)
 	return result.Instance:IsDescendantOf(head.Parent)
 end
 
---==================================================
--- FIND TARGET
---==================================================
-
+--// Find the enemy head closest to the crosshair
 local function findTarget()
+	local mousePosition = UserInputService:GetMouseLocation()
 
-	local mousePosition =
-		UserInputService:GetMouseLocation()
-
-	local closestHead = nil
-	local closestScreenDistance = FOV_RADIUS
-	local closestWorldDistance = MAX_DISTANCE
+	local bestHead = nil
+	local bestScreenDistance = FOV_RADIUS
+	local bestWorldDistance = MAX_DISTANCE
 
 	for _, player in ipairs(Players:GetPlayers()) do
-
 		if isEnemy(player) and player.Character then
 
 			local character = player.Character
+			local head = character:FindFirstChild("Head")
+			local humanoid = character:FindFirstChildOfClass("Humanoid")
 
-			local head =
-				character:FindFirstChild("Head")
-
-			local humanoid =
-				character:FindFirstChildOfClass("Humanoid")
-
-			if head
-				and humanoid
-				and humanoid.Health > 0 then
+			if head and humanoid and humanoid.Health > 0 then
 
 				local screenPosition, visible =
-					Camera:WorldToViewportPoint(
-						head.Position
-					)
+					Camera:WorldToViewportPoint(head.Position)
 
 				if visible and screenPosition.Z > 0 then
 
-					local screenDistance =
-						(
-							Vector2.new(
-								screenPosition.X,
-								screenPosition.Y
-							) - mousePosition
-						).Magnitude
+					local screenDistance = (
+						Vector2.new(screenPosition.X, screenPosition.Y)
+						- mousePosition
+					).Magnitude
 
 					local worldDistance =
-						(
-							Camera.CFrame.Position
-							- head.Position
-						).Magnitude
+						(Camera.CFrame.Position - head.Position).Magnitude
 
-					if screenDistance < closestScreenDistance
-						and worldDistance < closestWorldDistance
+					if screenDistance < bestScreenDistance
+						and worldDistance < bestWorldDistance
 						and canSee(head) then
 
-						closestScreenDistance =
-							screenDistance
-
-						closestWorldDistance =
-							worldDistance
-
-						closestHead = head
-
+						bestScreenDistance = screenDistance
+						bestWorldDistance = worldDistance
+						bestHead = head
 					end
 				end
 			end
 		end
 	end
 
-	return closestHead
+	return bestHead
 end
 
---==================================================
--- AUTO FIRE
---==================================================
-
-local function autoShoot()
-
-	if not AUTO_FIRE then
-		return
-	end
-
-	if not aiming then
-		return
-	end
-
-	if not targetHead then
-		return
-	end
-
-	local now = os.clock()
-
-	if now - lastShot < FIRE_COOLDOWN then
-		return
-	end
-
-	-- Make sure target is close to the crosshair
-	local screenPosition, visible =
-		Camera:WorldToViewportPoint(
-			targetHead.Position
-		)
-
-	if not visible or screenPosition.Z <= 0 then
-		return
-	end
-
-	local mousePosition =
-		UserInputService:GetMouseLocation()
-
-	local crosshairDistance =
-		(
-			Vector2.new(
-				screenPosition.X,
-				screenPosition.Y
-			) - mousePosition
-		).Magnitude
-
-	-- Only fire when crosshair is actually on target
-	if crosshairDistance <= 12 then
-
-		lastShot = now
-
-		-- YOUR game's firing event
-		FireWeapon:FireServer(
-			targetHead.Position
-		)
-
-	end
-end
-
---==================================================
--- BUTTON UPDATE
---==================================================
-
-local function updateButton()
-
-	if aiming then
-
-		button.Text = "AIM: ON"
-		button.BackgroundColor3 =
-			Color3.fromRGB(50, 170, 70)
-
-	else
-
-		button.Text = "AIM: OFF"
-		button.BackgroundColor3 =
-			Color3.fromRGB(170, 50, 50)
-
-	end
-end
-
---==================================================
--- TOGGLE
---==================================================
-
-local function toggleAim()
-
-	aiming = not aiming
-
-	if aiming then
-		targetHead = findTarget()
-	else
-		targetHead = nil
-	end
-
-	updateButton()
-end
-
-button.MouseButton1Click:Connect(toggleAim)
-
---==================================================
--- KEYBOARD TOGGLE
---==================================================
-
-UserInputService.InputBegan:Connect(function(
-	input,
-	processed
-)
-
+--// Hold Q to activate
+UserInputService.InputBegan:Connect(function(input, processed)
 	if processed then
 		return
 	end
 
 	if input.KeyCode == AIM_KEY then
-		toggleAim()
+		aiming = true
+		targetHead = findTarget()
 	end
 end)
 
---==================================================
--- AIM + AUTO FIRE LOOP
---==================================================
+UserInputService.InputEnded:Connect(function(input)
+	if input.KeyCode == AIM_KEY then
+		aiming = false
+		targetHead = nil
+	end
+end)
 
+--// Aim
 RunService.RenderStepped:Connect(function()
-
 	if not aiming then
 		return
 	end
 
-	-- Find target
+	-- Find a new target if necessary
 	if not targetHead
-		or not targetHead.Parent then
+		or not targetHead.Parent
+		or not targetHead.Parent:FindFirstChildOfClass("Humanoid")
+		or targetHead.Parent:FindFirstChildOfClass("Humanoid").Health <= 0 then
 
 		targetHead = findTarget()
-
 	end
 
 	if not targetHead then
 		return
 	end
 
-	local humanoid =
-		targetHead.Parent:FindFirstChildOfClass(
-			"Humanoid"
-		)
-
-	if not humanoid
-		or humanoid.Health <= 0 then
-
-		targetHead = findTarget()
-		return
-
-	end
-
-	-- Distance check
-	local distance =
-		(
-			Camera.CFrame.Position
-			- targetHead.Position
-		).Magnitude
-
-	if distance > MAX_DISTANCE then
+	-- Make sure target is still visible
+	if REQUIRE_LINE_OF_SIGHT and not canSee(targetHead) then
 		targetHead = findTarget()
 		return
 	end
 
-	-- Visibility check
-	if REQUIRE_LINE_OF_SIGHT
-		and not canSee(targetHead) then
+	local cameraPosition = Camera.CFrame.Position
+	local direction = (targetHead.Position - cameraPosition).Unit
 
-		targetHead = findTarget()
-		return
+	local desiredCFrame = CFrame.lookAt(
+		cameraPosition,
+		cameraPosition + direction
+	)
 
-	end
-
-	-- Aim at head
-	local cameraPosition =
-		Camera.CFrame.Position
-
-	local direction =
-		(targetHead.Position - cameraPosition).Unit
-
-	local desiredCFrame =
-		CFrame.lookAt(
-			cameraPosition,
-			cameraPosition + direction
-		)
-
-	Camera.CFrame =
-		Camera.CFrame:Lerp(
-			desiredCFrame,
-			SMOOTHNESS
-		)
-
-	-- Auto shoot
-	autoShoot()
-
+	Camera.CFrame = Camera.CFrame:Lerp(
+		desiredCFrame,
+		SMOOTHNESS
+	)
 end)
