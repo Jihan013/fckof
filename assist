@@ -1,6 +1,7 @@
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local LocalPlayer = Players.LocalPlayer
 local Camera = workspace.CurrentCamera
@@ -17,12 +18,20 @@ local SMOOTHNESS = 0.40
 
 local REQUIRE_LINE_OF_SIGHT = true
 
+-- Auto-fire settings
+local AUTO_FIRE = true
+local FIRE_COOLDOWN = 0.12
+
+-- Your game's weapon RemoteEvent
+local FireWeapon = ReplicatedStorage:WaitForChild("FireWeapon")
+
 --==================================================
 -- VARIABLES
 --==================================================
 
 local aiming = false
 local targetHead = nil
+local lastShot = 0
 
 --==================================================
 -- GUI
@@ -43,9 +52,7 @@ button.BackgroundColor3 = Color3.fromRGB(170, 50, 50)
 button.TextColor3 = Color3.fromRGB(255, 255, 255)
 button.Text = "AIM: OFF"
 button.TextScaled = true
-
 button.Font = Enum.Font.GothamBold
-button.AutoButtonColor = true
 
 button.Parent = screenGui
 
@@ -63,7 +70,6 @@ local function isEnemy(player)
 		return false
 	end
 
-	-- Team check
 	if LocalPlayer.Team ~= nil and player.Team ~= nil then
 		return LocalPlayer.Team ~= player.Team
 	end
@@ -90,18 +96,17 @@ local function canSee(head)
 	local origin = Camera.CFrame.Position
 	local direction = head.Position - origin
 
-	local rayParams = RaycastParams.new()
+	local params = RaycastParams.new()
 
-	rayParams.FilterType = Enum.RaycastFilterType.Exclude
-
-	rayParams.FilterDescendantsInstances = {
+	params.FilterType = Enum.RaycastFilterType.Exclude
+	params.FilterDescendantsInstances = {
 		character
 	}
 
 	local result = workspace:Raycast(
 		origin,
 		direction,
-		rayParams
+		params
 	)
 
 	if not result then
@@ -121,7 +126,6 @@ local function findTarget()
 		UserInputService:GetMouseLocation()
 
 	local closestHead = nil
-
 	local closestScreenDistance = FOV_RADIUS
 	local closestWorldDistance = MAX_DISTANCE
 
@@ -148,13 +152,13 @@ local function findTarget()
 
 				if visible and screenPosition.Z > 0 then
 
-					local screenDistance = (
-						Vector2.new(
-							screenPosition.X,
-							screenPosition.Y
-						)
-						- mousePosition
-					).Magnitude
+					local screenDistance =
+						(
+							Vector2.new(
+								screenPosition.X,
+								screenPosition.Y
+							) - mousePosition
+						).Magnitude
 
 					local worldDistance =
 						(
@@ -163,19 +167,17 @@ local function findTarget()
 						).Magnitude
 
 					if screenDistance < closestScreenDistance
-						and worldDistance < closestWorldDistance then
+						and worldDistance < closestWorldDistance
+						and canSee(head) then
 
-						if canSee(head) then
+						closestScreenDistance =
+							screenDistance
 
-							closestScreenDistance =
-								screenDistance
+						closestWorldDistance =
+							worldDistance
 
-							closestWorldDistance =
-								worldDistance
+						closestHead = head
 
-							closestHead = head
-
-						end
 					end
 				end
 			end
@@ -186,7 +188,65 @@ local function findTarget()
 end
 
 --==================================================
--- UPDATE BUTTON
+-- AUTO FIRE
+--==================================================
+
+local function autoShoot()
+
+	if not AUTO_FIRE then
+		return
+	end
+
+	if not aiming then
+		return
+	end
+
+	if not targetHead then
+		return
+	end
+
+	local now = os.clock()
+
+	if now - lastShot < FIRE_COOLDOWN then
+		return
+	end
+
+	-- Make sure target is close to the crosshair
+	local screenPosition, visible =
+		Camera:WorldToViewportPoint(
+			targetHead.Position
+		)
+
+	if not visible or screenPosition.Z <= 0 then
+		return
+	end
+
+	local mousePosition =
+		UserInputService:GetMouseLocation()
+
+	local crosshairDistance =
+		(
+			Vector2.new(
+				screenPosition.X,
+				screenPosition.Y
+			) - mousePosition
+		).Magnitude
+
+	-- Only fire when crosshair is actually on target
+	if crosshairDistance <= 12 then
+
+		lastShot = now
+
+		-- YOUR game's firing event
+		FireWeapon:FireServer(
+			targetHead.Position
+		)
+
+	end
+end
+
+--==================================================
+-- BUTTON UPDATE
 --==================================================
 
 local function updateButton()
@@ -194,14 +254,12 @@ local function updateButton()
 	if aiming then
 
 		button.Text = "AIM: ON"
-
 		button.BackgroundColor3 =
 			Color3.fromRGB(50, 170, 70)
 
 	else
 
 		button.Text = "AIM: OFF"
-
 		button.BackgroundColor3 =
 			Color3.fromRGB(170, 50, 50)
 
@@ -217,30 +275,18 @@ local function toggleAim()
 	aiming = not aiming
 
 	if aiming then
-
 		targetHead = findTarget()
-
 	else
-
 		targetHead = nil
-
 	end
 
 	updateButton()
 end
 
---==================================================
--- BUTTON
---==================================================
-
-button.MouseButton1Click:Connect(function()
-
-	toggleAim()
-
-end)
+button.MouseButton1Click:Connect(toggleAim)
 
 --==================================================
--- KEYBOARD
+-- KEYBOARD TOGGLE
 --==================================================
 
 UserInputService.InputBegan:Connect(function(
@@ -253,14 +299,12 @@ UserInputService.InputBegan:Connect(function(
 	end
 
 	if input.KeyCode == AIM_KEY then
-
 		toggleAim()
-
 	end
 end)
 
 --==================================================
--- AIM LOOP
+-- AIM + AUTO FIRE LOOP
 --==================================================
 
 RunService.RenderStepped:Connect(function()
@@ -269,7 +313,7 @@ RunService.RenderStepped:Connect(function()
 		return
 	end
 
-	-- Find target if there isn't one
+	-- Find target
 	if not targetHead
 		or not targetHead.Parent then
 
@@ -294,16 +338,7 @@ RunService.RenderStepped:Connect(function()
 
 	end
 
-	-- Check visibility
-	if REQUIRE_LINE_OF_SIGHT
-		and not canSee(targetHead) then
-
-		targetHead = findTarget()
-		return
-
-	end
-
-	-- Check distance
+	-- Distance check
 	local distance =
 		(
 			Camera.CFrame.Position
@@ -311,6 +346,13 @@ RunService.RenderStepped:Connect(function()
 		).Magnitude
 
 	if distance > MAX_DISTANCE then
+		targetHead = findTarget()
+		return
+	end
+
+	-- Visibility check
+	if REQUIRE_LINE_OF_SIGHT
+		and not canSee(targetHead) then
 
 		targetHead = findTarget()
 		return
@@ -330,11 +372,13 @@ RunService.RenderStepped:Connect(function()
 			cameraPosition + direction
 		)
 
-	-- Smooth aiming
 	Camera.CFrame =
 		Camera.CFrame:Lerp(
 			desiredCFrame,
 			SMOOTHNESS
 		)
+
+	-- Auto shoot
+	autoShoot()
 
 end)
