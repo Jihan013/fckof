@@ -5,23 +5,65 @@ local UserInputService = game:GetService("UserInputService")
 local LocalPlayer = Players.LocalPlayer
 local Camera = workspace.CurrentCamera
 
---// SETTINGS
+--==================================================
+-- SETTINGS
+--==================================================
+
 local AIM_KEY = Enum.KeyCode.Q
+
 local FOV_RADIUS = 180
 local MAX_DISTANCE = 500
 local SMOOTHNESS = 0.22
+
 local REQUIRE_LINE_OF_SIGHT = true
+
+--==================================================
+-- VARIABLES
+--==================================================
 
 local aiming = false
 local targetHead = nil
 
---// Check whether a player is an enemy
+--==================================================
+-- GUI
+--==================================================
+
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "AimAssistGUI"
+screenGui.ResetOnSpawn = false
+screenGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
+
+local button = Instance.new("TextButton")
+button.Name = "AimToggle"
+button.Size = UDim2.fromOffset(130, 45)
+button.Position = UDim2.new(1, -150, 1, -75)
+
+button.BackgroundColor3 = Color3.fromRGB(170, 50, 50)
+
+button.TextColor3 = Color3.fromRGB(255, 255, 255)
+button.Text = "AIM: OFF"
+button.TextScaled = true
+
+button.Font = Enum.Font.GothamBold
+button.AutoButtonColor = true
+
+button.Parent = screenGui
+
+local corner = Instance.new("UICorner")
+corner.CornerRadius = UDim.new(0, 8)
+corner.Parent = button
+
+--==================================================
+-- ENEMY CHECK
+--==================================================
+
 local function isEnemy(player)
+
 	if player == LocalPlayer then
 		return false
 	end
 
-	-- Works with normal Roblox Teams
+	-- Team check
 	if LocalPlayer.Team ~= nil and player.Team ~= nil then
 		return LocalPlayer.Team ~= player.Team
 	end
@@ -29,13 +71,18 @@ local function isEnemy(player)
 	return true
 end
 
---// Check if the head can actually be seen
+--==================================================
+-- LINE OF SIGHT
+--==================================================
+
 local function canSee(head)
+
 	if not REQUIRE_LINE_OF_SIGHT then
 		return true
 	end
 
 	local character = LocalPlayer.Character
+
 	if not character then
 		return false
 	end
@@ -43,11 +90,19 @@ local function canSee(head)
 	local origin = Camera.CFrame.Position
 	local direction = head.Position - origin
 
-	local params = RaycastParams.new()
-	params.FilterType = Enum.RaycastFilterType.Exclude
-	params.FilterDescendantsInstances = {character}
+	local rayParams = RaycastParams.new()
 
-	local result = workspace:Raycast(origin, direction, params)
+	rayParams.FilterType = Enum.RaycastFilterType.Exclude
+
+	rayParams.FilterDescendantsInstances = {
+		character
+	}
+
+	local result = workspace:Raycast(
+		origin,
+		direction,
+		rayParams
+	)
 
 	if not result then
 		return true
@@ -56,106 +111,230 @@ local function canSee(head)
 	return result.Instance:IsDescendantOf(head.Parent)
 end
 
---// Find the enemy head closest to the crosshair
-local function findTarget()
-	local mousePosition = UserInputService:GetMouseLocation()
+--==================================================
+-- FIND TARGET
+--==================================================
 
-	local bestHead = nil
-	local bestScreenDistance = FOV_RADIUS
-	local bestWorldDistance = MAX_DISTANCE
+local function findTarget()
+
+	local mousePosition =
+		UserInputService:GetMouseLocation()
+
+	local closestHead = nil
+
+	local closestScreenDistance = FOV_RADIUS
+	local closestWorldDistance = MAX_DISTANCE
 
 	for _, player in ipairs(Players:GetPlayers()) do
+
 		if isEnemy(player) and player.Character then
 
 			local character = player.Character
-			local head = character:FindFirstChild("Head")
-			local humanoid = character:FindFirstChildOfClass("Humanoid")
 
-			if head and humanoid and humanoid.Health > 0 then
+			local head =
+				character:FindFirstChild("Head")
+
+			local humanoid =
+				character:FindFirstChildOfClass("Humanoid")
+
+			if head
+				and humanoid
+				and humanoid.Health > 0 then
 
 				local screenPosition, visible =
-					Camera:WorldToViewportPoint(head.Position)
+					Camera:WorldToViewportPoint(
+						head.Position
+					)
 
 				if visible and screenPosition.Z > 0 then
 
 					local screenDistance = (
-						Vector2.new(screenPosition.X, screenPosition.Y)
+						Vector2.new(
+							screenPosition.X,
+							screenPosition.Y
+						)
 						- mousePosition
 					).Magnitude
 
 					local worldDistance =
-						(Camera.CFrame.Position - head.Position).Magnitude
+						(
+							Camera.CFrame.Position
+							- head.Position
+						).Magnitude
 
-					if screenDistance < bestScreenDistance
-						and worldDistance < bestWorldDistance
-						and canSee(head) then
+					if screenDistance < closestScreenDistance
+						and worldDistance < closestWorldDistance then
 
-						bestScreenDistance = screenDistance
-						bestWorldDistance = worldDistance
-						bestHead = head
+						if canSee(head) then
+
+							closestScreenDistance =
+								screenDistance
+
+							closestWorldDistance =
+								worldDistance
+
+							closestHead = head
+
+						end
 					end
 				end
 			end
 		end
 	end
 
-	return bestHead
+	return closestHead
 end
 
---// Hold Q to activate
-UserInputService.InputBegan:Connect(function(input, processed)
+--==================================================
+-- UPDATE BUTTON
+--==================================================
+
+local function updateButton()
+
+	if aiming then
+
+		button.Text = "AIM: ON"
+
+		button.BackgroundColor3 =
+			Color3.fromRGB(50, 170, 70)
+
+	else
+
+		button.Text = "AIM: OFF"
+
+		button.BackgroundColor3 =
+			Color3.fromRGB(170, 50, 50)
+
+	end
+end
+
+--==================================================
+-- TOGGLE
+--==================================================
+
+local function toggleAim()
+
+	aiming = not aiming
+
+	if aiming then
+
+		targetHead = findTarget()
+
+	else
+
+		targetHead = nil
+
+	end
+
+	updateButton()
+end
+
+--==================================================
+-- BUTTON
+--==================================================
+
+button.MouseButton1Click:Connect(function()
+
+	toggleAim()
+
+end)
+
+--==================================================
+-- KEYBOARD
+--==================================================
+
+UserInputService.InputBegan:Connect(function(
+	input,
+	processed
+)
+
 	if processed then
 		return
 	end
 
 	if input.KeyCode == AIM_KEY then
-		aiming = true
-		targetHead = findTarget()
+
+		toggleAim()
+
 	end
 end)
 
-UserInputService.InputEnded:Connect(function(input)
-	if input.KeyCode == AIM_KEY then
-		aiming = false
-		targetHead = nil
-	end
-end)
+--==================================================
+-- AIM LOOP
+--==================================================
 
---// Aim
 RunService.RenderStepped:Connect(function()
+
 	if not aiming then
 		return
 	end
 
-	-- Find a new target if necessary
+	-- Find target if there isn't one
 	if not targetHead
-		or not targetHead.Parent
-		or not targetHead.Parent:FindFirstChildOfClass("Humanoid")
-		or targetHead.Parent:FindFirstChildOfClass("Humanoid").Health <= 0 then
+		or not targetHead.Parent then
 
 		targetHead = findTarget()
+
 	end
 
 	if not targetHead then
 		return
 	end
 
-	-- Make sure target is still visible
-	if REQUIRE_LINE_OF_SIGHT and not canSee(targetHead) then
+	local humanoid =
+		targetHead.Parent:FindFirstChildOfClass(
+			"Humanoid"
+		)
+
+	if not humanoid
+		or humanoid.Health <= 0 then
+
 		targetHead = findTarget()
 		return
+
 	end
 
-	local cameraPosition = Camera.CFrame.Position
-	local direction = (targetHead.Position - cameraPosition).Unit
+	-- Check visibility
+	if REQUIRE_LINE_OF_SIGHT
+		and not canSee(targetHead) then
 
-	local desiredCFrame = CFrame.lookAt(
-		cameraPosition,
-		cameraPosition + direction
-	)
+		targetHead = findTarget()
+		return
 
-	Camera.CFrame = Camera.CFrame:Lerp(
-		desiredCFrame,
-		SMOOTHNESS
-	)
+	end
+
+	-- Check distance
+	local distance =
+		(
+			Camera.CFrame.Position
+			- targetHead.Position
+		).Magnitude
+
+	if distance > MAX_DISTANCE then
+
+		targetHead = findTarget()
+		return
+
+	end
+
+	-- Aim at head
+	local cameraPosition =
+		Camera.CFrame.Position
+
+	local direction =
+		(targetHead.Position - cameraPosition).Unit
+
+	local desiredCFrame =
+		CFrame.lookAt(
+			cameraPosition,
+			cameraPosition + direction
+		)
+
+	-- Smooth aiming
+	Camera.CFrame =
+		Camera.CFrame:Lerp(
+			desiredCFrame,
+			SMOOTHNESS
+		)
+
 end)
