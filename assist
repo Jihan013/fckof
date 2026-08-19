@@ -13,7 +13,7 @@ local AIM_KEY = Enum.KeyCode.E
 
 local FOV_RADIUS = 180
 local MAX_DISTANCE = 500
-local SMOOTHNESS = 0.30
+local SMOOTHNESS = 0.22
 
 local REQUIRE_LINE_OF_SIGHT = true
 
