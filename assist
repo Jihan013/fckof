@@ -9,11 +9,11 @@ local Camera = workspace.CurrentCamera
 -- SETTINGS
 --==================================================
 
-local AIM_KEY = Enum.KeyCode.Q
+local AIM_KEY = Enum.KeyCode.E
 
 local FOV_RADIUS = 180
 local MAX_DISTANCE = 500
-local SMOOTHNESS = 0.22
+local SMOOTHNESS = 0.30
 
 local REQUIRE_LINE_OF_SIGHT = true
 
